@@ -1,174 +1,93 @@
-# This is conceptual Python Flask backend code.
-# You would need to install Flask, psycopg2 (for PostgreSQL interaction), and potentially python-dotenv for environment variables.
-# This code is for demonstration and needs to be run in a separate environment (e.g., your local machine or a server).
+import React, { useState, useEffect } from 'react';
 
-from flask import Flask, request, jsonify
-from flask_cors import CORS # To handle Cross-Origin Resource Sharing
-import psycopg2 # PostgreSQL adapter
-import os
+// Main App component for the even simpler Phone Book (display-only)
+const App = () => {
+  // IMPORTANT: Replace this with the actual URL of your Flask backend.
+  // This could be your VM's IP address and port (e.g., 'http://YOUR_VM_IP:5000')
+  // or your OpenShift route URL (e.g., 'http://my-phonebook-backend.apps.myopenshift.com')
+  const BACKEND_URL = 'http://localhost:5000'; // Default for local testing, CHANGE THIS!
 
-app = Flask(__name__)
-CORS(app) # Enable CORS for all routes (important for frontend communication)
+  // State to store contacts (only name and phone now)
+  const [contacts, setContacts] = useState([]);
+  // State for messages/notifications to the user
+  const [message, setMessage] = useState('');
+  // State to control message visibility
+  const [showMessage, setShowMessage] = useState(false);
 
-# --- Database Connection Configuration ---
-# In a real application, you would load these from environment variables
-# For example, using python-dotenv:
-# from dotenv import load_dotenv
-# load_dotenv()
-DB_HOST = os.getenv('DB_HOST', 'localhost')
-DB_NAME = os.getenv('DB_NAME', 'phonebook_db')
-DB_USER = os.getenv('DB_USER', 'your_username')
-DB_PASSWORD = os.getenv('DB_PASSWORD', 'your_password')
-DB_PORT = os.getenv('DB_PORT', '5432')
+  // Function to fetch contacts from the backend API
+  const fetchContacts = async () => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/contacts`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const data = await response.json();
+      setContacts(data);
+    } catch (error) {
+      console.error('Error fetching contacts:', error);
+      displayMessage('Failed to load contacts.');
+    }
+  };
 
-# Function to get a database connection
-def get_db_connection():
-    conn = None
-    try:
-        conn = psycopg2.connect(
-            host=DB_HOST,
-            database=DB_NAME,
-            user=DB_USER,
-            password=DB_PASSWORD,
-            port=DB_PORT
-        )
-        return conn
-    except psycopg2.Error as e:
-        print(f"Database connection error: {e}")
-        # In a production app, you'd log this error and handle it more gracefully
-        return None
+  // Fetch contacts on component mount
+  useEffect(() => {
+    fetchContacts();
+  }, []);
 
-# --- Database Schema Setup (Run this once manually or in a migration script) ---
-# You can run this SQL command in your PostgreSQL client (e.g., psql) to create the table:
-# CREATE TABLE contacts (
-#     id SERIAL PRIMARY KEY,
-#     name VARCHAR(100) NOT NULL,
-#     surname VARCHAR(100),
-#     company VARCHAR(100),
-#     phone VARCHAR(50) NOT NULL,
-#     address TEXT
-# );
+  // Display a message to the user
+  const displayMessage = (msg) => {
+    setMessage(msg);
+    setShowMessage(true);
+    setTimeout(() => {
+      setShowMessage(false);
+      setMessage('');
+    }, 3000); // Message disappears after 3 seconds
+  };
 
-# --- API Endpoints ---
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-purple-50 p-4 font-sans text-gray-900 flex flex-col items-center">
+      <header className="w-full max-w-4xl bg-white p-6 rounded-xl shadow-lg mb-8 text-center">
+        <h1 className="text-4xl font-extrabold text-indigo-700 mb-2 tracking-tight">
+          📞 Simple Phone Book Viewer
+        </h1>
+        <p className="text-lg text-gray-600">View contacts from the backend.</p>
+      </header>
 
-@app.route('/api/contacts', methods=['GET'])
-def get_contacts():
-    conn = get_db_connection()
-    if conn is None:
-        return jsonify({"error": "Database connection failed"}), 500
+      {/* Message Box */}
+      {showMessage && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 bg-indigo-500 text-white px-6 py-3 rounded-full shadow-lg z-50 animate-fade-in-down">
+          {message}
+        </div>
+      )}
 
-    cur = conn.cursor()
-    try:
-        cur.execute("SELECT id, name, surname, company, phone, address FROM contacts ORDER BY name, surname;")
-        contacts_data = cur.fetchall()
-        # Convert list of tuples to list of dictionaries for JSON response
-        contacts_list = []
-        for contact in contacts_data:
-            contacts_list.append({
-                "id": contact[0],
-                "name": contact[1],
-                "surname": contact[2],
-                "company": contact[3],
-                "phone": contact[4],
-                "address": contact[5],
-            })
-        return jsonify(contacts_list)
-    except Exception as e:
-        print(f"Error fetching contacts: {e}")
-        return jsonify({"error": "Failed to fetch contacts"}), 500
-    finally:
-        cur.close()
-        conn.close()
+      {/* Contacts List */}
+      <section className="w-full max-w-4xl bg-white p-8 rounded-xl shadow-lg">
+        <h2 className="text-3xl font-bold text-indigo-600 mb-6 text-center">Your Contacts ({contacts.length})</h2>
+        {contacts.length === 0 ? (
+          <p className="text-center text-gray-500 text-lg">No contacts yet. Ensure backend is running and connected.</p>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {contacts.map((contact) => (
+              <div
+                key={contact.id}
+                className="bg-indigo-50 border border-indigo-200 rounded-xl p-6 shadow-sm hover:shadow-md transition-shadow duration-200 ease-in-out flex flex-col justify-between"
+              >
+                <div>
+                  <h3 className="text-xl font-bold text-indigo-800 mb-2 truncate">
+                    {contact.name}
+                  </h3>
+                  <p className="text-gray-700 text-sm mb-1">
+                    <span className="font-semibold">Phone:</span> {contact.phone}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+    </div>
+  );
+};
 
-@app.route('/api/contacts', methods=['POST'])
-def add_contact():
-    new_contact = request.json
-    name = new_contact.get('name')
-    surname = new_contact.get('surname')
-    company = new_contact.get('company')
-    phone = new_contact.get('phone')
-    address = new_contact.get('address')
-
-    if not name or not phone:
-        return jsonify({"error": "Name and phone are required"}), 400
-
-    conn = get_db_connection()
-    if conn is None:
-        return jsonify({"error": "Database connection failed"}), 500
-
-    cur = conn.cursor()
-    try:
-        cur.execute(
-            "INSERT INTO contacts (name, surname, company, phone, address) VALUES (%s, %s, %s, %s, %s) RETURNING id;",
-            (name, surname, company, phone, address)
-        )
-        contact_id = cur.fetchone()[0]
-        conn.commit()
-        return jsonify({"message": "Contact added successfully", "id": contact_id}), 201
-    except Exception as e:
-        conn.rollback() # Rollback on error
-        print(f"Error adding contact: {e}")
-        return jsonify({"error": "Failed to add contact"}), 500
-    finally:
-        cur.close()
-        conn.close()
-
-@app.route('/api/contacts/<int:contact_id>', methods=['PUT'])
-def update_contact(contact_id):
-    updated_data = request.json
-    name = updated_data.get('name')
-    surname = updated_data.get('surname')
-    company = updated_data.get('company')
-    phone = updated_data.get('phone')
-    address = updated_data.get('address')
-
-    if not name or not phone:
-        return jsonify({"error": "Name and phone are required"}), 400
-
-    conn = get_db_connection()
-    if conn is None:
-        return jsonify({"error": "Database connection failed"}), 500
-
-    cur = conn.cursor()
-    try:
-        cur.execute(
-            "UPDATE contacts SET name=%s, surname=%s, company=%s, phone=%s, address=%s WHERE id=%s;",
-            (name, surname, company, phone, address, contact_id)
-        )
-        conn.commit()
-        if cur.rowcount == 0:
-            return jsonify({"error": "Contact not found"}), 404
-        return jsonify({"message": "Contact updated successfully"}), 200
-    except Exception as e:
-        conn.rollback()
-        print(f"Error updating contact: {e}")
-        return jsonify({"error": "Failed to update contact"}), 500
-    finally:
-        cur.close()
-        conn.close()
-
-@app.route('/api/contacts/<int:contact_id>', methods=['DELETE'])
-def delete_contact(contact_id):
-    conn = get_db_connection()
-    if conn is None:
-        return jsonify({"error": "Database connection failed"}), 500
-
-    cur = conn.cursor()
-    try:
-        cur.execute("DELETE FROM contacts WHERE id=%s;", (contact_id,))
-        conn.commit()
-        if cur.rowcount == 0:
-            return jsonify({"error": "Contact not found"}), 404
-        return jsonify({"message": "Contact deleted successfully"}), 200
-    except Exception as e:
-        conn.rollback()
-        print(f"Error deleting contact: {e}")
-        return jsonify({"error": "Failed to delete contact"}), 500
-    finally:
-        cur.close()
-        conn.close()
-
-# Run the Flask app
-if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000) # Run on port 5000
+export default App;
 
