@@ -1,0 +1,115 @@
+---
+# This Ansible playbook automates the installation and configuration of PostgreSQL
+# on a Fedora system for the Phone Book application.
+
+- name: Setup PostgreSQL for Phone Book App on Fedora
+  hosts: your_vm_ip_address # Replace with your Fedora VM's IP address or hostname
+  become: yes # Run all tasks with sudo privileges
+
+  vars:
+    # --- Database Configuration Variables ---
+    db_user: "dbuser"
+    # IMPORTANT: For production, use Ansible Vault for passwords:
+    # db_password: "{{ lookup('ansible.builtin.env', 'DB_PASS') }}"
+    # Or prompt for it:
+    # db_password: "{{ postgres_db_password }}"
+    db_password: "your_strong_password" # <<< CHANGE THIS TO A SECURE PASSWORD!
+    db_name: "phonebook_db"
+    pg_data_dir: "/var/lib/pgsql/data" # Default data directory for Fedora
+    pg_hba_conf: "{{ pg_data_dir }}/pg_hba.conf"
+    postgresql_conf: "{{ pg_data_dir }}/postgresql.conf"
+
+  tasks:
+    - name: Ensure PostgreSQL server and contrib packages are installed
+      ansible.builtin.dnf:
+        name:
+          - postgresql-server
+          - postgresql-contrib
+          - python3-psycopg2 # Required for Ansible's PostgreSQL modules
+        state: present
+      # Add this to ensure necessary client libraries for psycopg2 are present if dnf doesn't pull them
+      # Also ensures gcc for psycopg2-binary
+      # dnf: name: "{{ item }}" state: present
+      # with_items:
+      #   - postgresql-server
+      #   - postgresql-contrib
+      #   - python3-psycopg2
+      #   - gcc
+      #   - libpq-devel
+      #   - python3-devel # for psycopg2-binary if used as a Python package later
+
+    - name: Initialize the PostgreSQL database cluster
+      ansible.builtin.command: postgresql-setup --initdb
+      args:
+        creates: "{{ pg_data_dir }}/postgresql.conf" # Idempotency check: only run if conf doesn't exist
+      # If this command ever fails, check systemctl status postgresql.service after initdb
+      # If it's already running/enabled, you might need to stop/disable it before re-initdb
+      # For first-time setup, this should be fine.
+
+    - name: Start and enable PostgreSQL service
+      ansible.builtin.systemd:
+        name: postgresql
+        state: started
+        enabled: yes
+
+    - name: Create PostgreSQL user '{{ db_user }}'
+      community.postgresql.postgresql_user:
+        name: "{{ db_user }}"
+        password: "{{ db_password }}"
+        state: present
+      # Connect as the 'postgres' user, which has superuser privileges
+      become: yes
+      become_user: postgres
+
+    - name: Create PostgreSQL database '{{ db_name }}' owned by '{{ db_user }}'
+      community.postgresql.postgresql_db:
+        name: "{{ db_name }}"
+        owner: "{{ db_user }}"
+        state: present
+      become: yes
+      become_user: postgres
+
+    - name: Configure postgresql.conf to listen on all addresses
+      ansible.builtin.lineinfile:
+        path: "{{ postgresql_conf }}"
+        regexp: "^#?listen_addresses =" # Finds the line, whether commented or not
+        line: "listen_addresses = '*'" # Sets it to listen on all interfaces
+        state: present
+        backup: yes # Create a backup of the original file
+      notify: Restart PostgreSQL
+
+    - name: Configure pg_hba.conf for client authentication
+      ansible.builtin.blockinfile:
+        path: "{{ pg_hba_conf }}"
+        block: |
+          # TYPE  DATABASE        USER            ADDRESS                 METHOD
+          host    {{ db_name }}    {{ db_user }}   127.0.0.1/32            md5
+          host    {{ db_name }}    {{ db_user }}   ::1/128                 md5
+          host    {{ db_name }}    {{ db_user }}   0.0.0.0/0               md5
+        marker: "# {mark} ANSIBLE MANAGED BLOCK FOR PHONEBOOK APP" # Custom marker for block
+        insertafter: EOF # Add at the end of the file, or specify a more precise line
+        backup: yes # Create a backup of the original file
+      notify: Restart PostgreSQL
+
+    - name: Create the 'contacts' table in '{{ db_name }}'
+      community.postgresql.postgresql_query:
+        db: "{{ db_name }}"
+        query: |
+          CREATE TABLE IF NOT EXISTS contacts (
+              id SERIAL PRIMARY KEY,
+              name VARCHAR(100) NOT NULL,
+              surname VARCHAR(100),
+              company VARCHAR(100),
+              phone VARCHAR(50) NOT NULL,
+              address TEXT
+          );
+      become: yes
+      become_user: postgres
+      # Note: postgresql_query does not inherently handle connection string issues
+      # If remote connection from controller is an issue, run this on localhost using psql_host: '127.0.0.1' and psql_user/password
+
+  handlers:
+    - name: Restart PostgreSQL
+      ansible.builtin.systemd:
+        name: postgresql
+        state: restarted
