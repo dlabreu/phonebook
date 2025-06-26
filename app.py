@@ -1,316 +1,174 @@
-mport React, { useState, useEffect } from 'react';
+# This is conceptual Python Flask backend code.
+# You would need to install Flask, psycopg2 (for PostgreSQL interaction), and potentially python-dotenv for environment variables.
+# This code is for demonstration and needs to be run in a separate environment (e.g., your local machine or a server).
 
-// Main App component
-const App = () => {
-  // State to store contacts
-  const [contacts, setContacts] = useState([]);
-  // State for the form input fields
-  const [formData, setFormData] = useState({
-    id: null,
-    name: '',
-    surname: '',
-    company: '',
-    phone: '',
-    address: '',
-  });
-  // State for messages/notifications to the user
-  const [message, setMessage] = useState('');
-  // State to control message visibility
-  const [showMessage, setShowMessage] = useState(false);
+from flask import Flask, request, jsonify
+from flask_cors import CORS # To handle Cross-Origin Resource Sharing
+import psycopg2 # PostgreSQL adapter
+import os
 
-  // Simulate fetching contacts from an API on component mount
-  useEffect(() => {
-    // In a real application, you would make a fetch call here:
-    // fetch('/api/contacts')
-    //   .then(response => response.json())
-    //   .then(data => setContacts(data))
-    //   .catch(error => console.error('Error fetching contacts:', error));
+app = Flask(__name__)
+CORS(app) # Enable CORS for all routes (important for frontend communication)
 
-    // For demonstration, use mock data
-    const mockContacts = [
-      { id: 1, name: 'John', surname: 'Doe', company: 'Acme Corp', phone: '123-456-7890', address: '123 Main St' },
-      { id: 2, name: 'Jane', surname: 'Smith', company: 'Globex Inc', phone: '098-765-4321', address: '456 Oak Ave' },
-      { id: 3, name: 'Peter', surname: 'Jones', company: 'Wayne Enterprises', phone: '555-123-4567', address: '789 Pine Ln' },
-    ];
-    setContacts(mockContacts);
-  }, []);
+# --- Database Connection Configuration ---
+# In a real application, you would load these from environment variables
+# For example, using python-dotenv:
+# from dotenv import load_dotenv
+# load_dotenv()
+DB_HOST = os.getenv('DB_HOST', 'localhost')
+DB_NAME = os.getenv('DB_NAME', 'phonebook_db')
+DB_USER = os.getenv('DB_USER', 'your_username')
+DB_PASSWORD = os.getenv('DB_PASSWORD', 'your_password')
+DB_PORT = os.getenv('DB_PORT', '5432')
 
-  // Handle input changes for the form
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData({ ...formData, [name]: value });
-  };
+# Function to get a database connection
+def get_db_connection():
+    conn = None
+    try:
+        conn = psycopg2.connect(
+            host=DB_HOST,
+            database=DB_NAME,
+            user=DB_USER,
+            password=DB_PASSWORD,
+            port=DB_PORT
+        )
+        return conn
+    except psycopg2.Error as e:
+        print(f"Database connection error: {e}")
+        # In a production app, you'd log this error and handle it more gracefully
+        return None
 
-  // Display a message to the user
-  const displayMessage = (msg) => {
-    setMessage(msg);
-    setShowMessage(true);
-    setTimeout(() => {
-      setShowMessage(false);
-      setMessage('');
-    }, 3000); // Message disappears after 3 seconds
-  };
+# --- Database Schema Setup (Run this once manually or in a migration script) ---
+# You can run this SQL command in your PostgreSQL client (e.g., psql) to create the table:
+# CREATE TABLE contacts (
+#     id SERIAL PRIMARY KEY,
+#     name VARCHAR(100) NOT NULL,
+#     surname VARCHAR(100),
+#     company VARCHAR(100),
+#     phone VARCHAR(50) NOT NULL,
+#     address TEXT
+# );
 
-  // Handle form submission (add or update contact)
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (!formData.name || !formData.phone) {
-      displayMessage('Name and Phone are required!');
-      return;
-    }
+# --- API Endpoints ---
 
-    if (formData.id) {
-      // Update existing contact
-      // In a real app: fetch(`/api/contacts/${formData.id}`, { method: 'PUT', body: JSON.stringify(formData) })
-      const updatedContacts = contacts.map((contact) =>
-        contact.id === formData.id ? { ...formData } : contact
-      );
-      setContacts(updatedContacts);
-      displayMessage('Contact updated successfully!');
-    } else {
-      // Add new contact
-      // In a real app: fetch('/api/contacts', { method: 'POST', body: JSON.stringify(formData) })
-      const newContact = { ...formData, id: Date.now() }; // Generate a unique ID
-      setContacts([...contacts, newContact]);
-      displayMessage('Contact added successfully!');
-    }
-    // Clear form after submission
-    setFormData({ id: null, name: '', surname: '', company: '', phone: '', address: '' });
-  };
+@app.route('/api/contacts', methods=['GET'])
+def get_contacts():
+    conn = get_db_connection()
+    if conn is None:
+        return jsonify({"error": "Database connection failed"}), 500
 
-  // Handle editing a contact
-  const handleEdit = (contact) => {
-    setFormData({ ...contact });
-  };
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT id, name, surname, company, phone, address FROM contacts ORDER BY name, surname;")
+        contacts_data = cur.fetchall()
+        # Convert list of tuples to list of dictionaries for JSON response
+        contacts_list = []
+        for contact in contacts_data:
+            contacts_list.append({
+                "id": contact[0],
+                "name": contact[1],
+                "surname": contact[2],
+                "company": contact[3],
+                "phone": contact[4],
+                "address": contact[5],
+            })
+        return jsonify(contacts_list)
+    except Exception as e:
+        print(f"Error fetching contacts: {e}")
+        return jsonify({"error": "Failed to fetch contacts"}), 500
+    finally:
+        cur.close()
+        conn.close()
 
-  // Handle deleting a contact
-  const handleDelete = (id) => {
-    // In a real app: fetch(`/api/contacts/${id}`, { method: 'DELETE' })
-    if (window.confirm('Are you sure you want to delete this contact?')) {
-      const filteredContacts = contacts.filter((contact) => contact.id !== id);
-      setContacts(filteredContacts);
-      displayMessage('Contact deleted successfully!');
-    }
-  };
+@app.route('/api/contacts', methods=['POST'])
+def add_contact():
+    new_contact = request.json
+    name = new_contact.get('name')
+    surname = new_contact.get('surname')
+    company = new_contact.get('company')
+    phone = new_contact.get('phone')
+    address = new_contact.get('address')
 
-  // Custom confirmation modal (instead of window.confirm)
-  const CustomConfirmModal = ({ message, onConfirm, onCancel }) => (
-    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex justify-center items-center z-50">
-      <div className="bg-white p-6 rounded-lg shadow-xl max-w-sm w-full">
-        <p className="text-lg font-semibold mb-4 text-gray-800">{message}</p>
-        <div className="flex justify-end space-x-3">
-          <button
-            onClick={onCancel}
-            className="px-4 py-2 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-opacity-50"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={onConfirm}
-            className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-50"
-          >
-            Delete
-          </button>
-        </div>
-      </div>
-    </div>
-  );
+    if not name or not phone:
+        return jsonify({"error": "Name and phone are required"}), 400
 
-  // State to manage the custom confirmation modal
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [contactToDeleteId, setContactToDeleteId] = useState(null);
+    conn = get_db_connection()
+    if conn is None:
+        return jsonify({"error": "Database connection failed"}), 500
 
-  const confirmDelete = (id) => {
-    setContactToDeleteId(id);
-    setShowDeleteConfirm(true);
-  };
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            "INSERT INTO contacts (name, surname, company, phone, address) VALUES (%s, %s, %s, %s, %s) RETURNING id;",
+            (name, surname, company, phone, address)
+        )
+        contact_id = cur.fetchone()[0]
+        conn.commit()
+        return jsonify({"message": "Contact added successfully", "id": contact_id}), 201
+    except Exception as e:
+        conn.rollback() # Rollback on error
+        print(f"Error adding contact: {e}")
+        return jsonify({"error": "Failed to add contact"}), 500
+    finally:
+        cur.close()
+        conn.close()
 
-  const handleConfirmDelete = () => {
-    const filteredContacts = contacts.filter((contact) => contact.id !== contactToDeleteId);
-    setContacts(filteredContacts);
-    displayMessage('Contact deleted successfully!');
-    setShowDeleteConfirm(false);
-    setContactToDeleteId(null);
-  };
+@app.route('/api/contacts/<int:contact_id>', methods=['PUT'])
+def update_contact(contact_id):
+    updated_data = request.json
+    name = updated_data.get('name')
+    surname = updated_data.get('surname')
+    company = updated_data.get('company')
+    phone = updated_data.get('phone')
+    address = updated_data.get('address')
 
-  const handleCancelDelete = () => {
-    setShowDeleteConfirm(false);
-    setContactToDeleteId(null);
-  };
+    if not name or not phone:
+        return jsonify({"error": "Name and phone are required"}), 400
 
+    conn = get_db_connection()
+    if conn is None:
+        return jsonify({"error": "Database connection failed"}), 500
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-purple-50 p-4 font-sans text-gray-900 flex flex-col items-center">
-      <header className="w-full max-w-4xl bg-white p-6 rounded-xl shadow-lg mb-8 text-center">
-        <h1 className="text-4xl font-extrabold text-indigo-700 mb-2 tracking-tight">
-          📞 Phone Book App
-        </h1>
-        <p className="text-lg text-gray-600">Manage your contacts easily and efficiently.</p>
-      </header>
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            "UPDATE contacts SET name=%s, surname=%s, company=%s, phone=%s, address=%s WHERE id=%s;",
+            (name, surname, company, phone, address, contact_id)
+        )
+        conn.commit()
+        if cur.rowcount == 0:
+            return jsonify({"error": "Contact not found"}), 404
+        return jsonify({"message": "Contact updated successfully"}), 200
+    except Exception as e:
+        conn.rollback()
+        print(f"Error updating contact: {e}")
+        return jsonify({"error": "Failed to update contact"}), 500
+    finally:
+        cur.close()
+        conn.close()
 
-      {/* Message Box */}
-      {showMessage && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 bg-indigo-500 text-white px-6 py-3 rounded-full shadow-lg z-50 animate-fade-in-down">
-          {message}
-        </div>
-      )}
+@app.route('/api/contacts/<int:contact_id>', methods=['DELETE'])
+def delete_contact(contact_id):
+    conn = get_db_connection()
+    if conn is None:
+        return jsonify({"error": "Database connection failed"}), 500
 
-      {/* Add/Edit Contact Form */}
-      <section className="w-full max-w-4xl bg-white p-8 rounded-xl shadow-lg mb-8">
-        <h2 className="text-3xl font-bold text-indigo-600 mb-6 text-center">
-          {formData.id ? 'Edit Contact' : 'Add New Contact'}
-        </h2>
-        <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
-              Name <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              id="name"
-              name="name"
-              value={formData.name}
-              onChange={handleChange}
-              className="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-              placeholder="e.g., John"
-              required
-            />
-          </div>
-          <div>
-            <label htmlFor="surname" className="block text-sm font-medium text-gray-700 mb-1">
-              Surname
-            </label>
-            <input
-              type="text"
-              id="surname"
-              name="surname"
-              value={formData.surname}
-              onChange={handleChange}
-              className="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-              placeholder="e.g., Doe"
-            />
-          </div>
-          <div>
-            <label htmlFor="company" className="block text-sm font-medium text-gray-700 mb-1">
-              Company
-            </label>
-            <input
-              type="text"
-              id="company"
-              name="company"
-              value={formData.company}
-              onChange={handleChange}
-              className="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-              placeholder="e.g., Acme Corp"
-            />
-          </div>
-          <div>
-            <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-1">
-              Phone <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="tel"
-              id="phone"
-              name="phone"
-              value={formData.phone}
-              onChange={handleChange}
-              className="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-              placeholder="e.g., 123-456-7890"
-              required
-            />
-          </div>
-          <div className="md:col-span-2">
-            <label htmlFor="address" className="block text-sm font-medium text-gray-700 mb-1">
-              Address
-            </label>
-            <input
-              type="text"
-              id="address"
-              name="address"
-              value={formData.address}
-              onChange={handleChange}
-              className="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-              placeholder="e.g., 123 Main St, Anytown"
-            />
-          </div>
-          <div className="md:col-span-2 flex justify-center mt-4">
-            <button
-              type="submit"
-              className="px-8 py-3 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition duration-300 ease-in-out transform hover:scale-105"
-            >
-              {formData.id ? 'Update Contact' : 'Add Contact'}
-            </button>
-            {formData.id && (
-              <button
-                type="button"
-                onClick={() => setFormData({ id: null, name: '', surname: '', company: '', phone: '', address: '' })}
-                className="ml-4 px-8 py-3 bg-gray-200 text-gray-800 font-semibold rounded-lg shadow-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition duration-300 ease-in-out transform hover:scale-105"
-              >
-                Cancel Edit
-              </button>
-            )}
-          </div>
-        </form>
-      </section>
+    cur = conn.cursor()
+    try:
+        cur.execute("DELETE FROM contacts WHERE id=%s;", (contact_id,))
+        conn.commit()
+        if cur.rowcount == 0:
+            return jsonify({"error": "Contact not found"}), 404
+        return jsonify({"message": "Contact deleted successfully"}), 200
+    except Exception as e:
+        conn.rollback()
+        print(f"Error deleting contact: {e}")
+        return jsonify({"error": "Failed to delete contact"}), 500
+    finally:
+        cur.close()
+        conn.close()
 
-      {/* Contacts List */}
-      <section className="w-full max-w-4xl bg-white p-8 rounded-xl shadow-lg">
-        <h2 className="text-3xl font-bold text-indigo-600 mb-6 text-center">Your Contacts ({contacts.length})</h2>
-        {contacts.length === 0 ? (
-          <p className="text-center text-gray-500 text-lg">No contacts yet. Add some above!</p>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {contacts.map((contact) => (
-              <div
-                key={contact.id}
-                className="bg-indigo-50 border border-indigo-200 rounded-xl p-6 shadow-sm hover:shadow-md transition-shadow duration-200 ease-in-out flex flex-col justify-between"
-              >
-                <div>
-                  <h3 className="text-xl font-bold text-indigo-800 mb-2 truncate">
-                    {contact.name} {contact.surname}
-                  </h3>
-                  {contact.company && (
-                    <p className="text-gray-700 text-sm mb-1">
-                      <span className="font-semibold">Company:</span> {contact.company}
-                    </p>
-                  )}
-                  <p className="text-gray-700 text-sm mb-1">
-                    <span className="font-semibold">Phone:</span> {contact.phone}
-                  </p>
-                  {contact.address && (
-                    <p className="text-gray-700 text-sm">
-                      <span className="font-semibold">Address:</span> {contact.address}
-                    </p>
-                  )}
-                </div>
-                <div className="flex justify-end gap-3 mt-4">
-                  <button
-                    onClick={() => handleEdit(contact)}
-                    className="px-4 py-2 bg-purple-500 text-white rounded-lg shadow-md hover:bg-purple-600 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 transition-transform duration-200 ease-in-out transform hover:scale-105 text-sm"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => confirmDelete(contact.id)}
-                    className="px-4 py-2 bg-red-500 text-white rounded-lg shadow-md hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-transform duration-200 ease-in-out transform hover:scale-105 text-sm"
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-      {showDeleteConfirm && (
-        <CustomConfirmModal
-          message="Are you sure you want to delete this contact?"
-          onConfirm={handleConfirmDelete}
-          onCancel={handleCancelDelete}
-        />
-      )}
-    </div>
-  );
-};
+# Run the Flask app
+if __name__ == '__main__':
+    app.run(debug=True, host='0.0.0.0', port=5000) # Run on port 5000
 
-export default App;
