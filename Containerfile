@@ -6,7 +6,7 @@ WORKDIR /app
 
 # Install Python and pip, and development packages needed for psycopg2-binary
 RUN dnf update -y && \
-    dnf install -y iputils postgresql-client net-tools python3 python3-pip python3-devel gcc libpq-devel && \
+    dnf install -y iputils net-tools python3 python3-pip python3-devel gcc libpq-devel && \
     dnf clean all
 
 # Copy requirements.txt and install Python dependencies
