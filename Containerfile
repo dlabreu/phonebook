@@ -1,4 +1,4 @@
-## Use a Fedora base image
+### Use a Fedora base image
 FROM fedora:latest
 
 # Set the working directory in the container
